@@ -7,7 +7,7 @@
 :root{--ink:#21180f;--paper:#e8d7b4;--paper2:#d7c29a;--gold:#b58a43;--dark:#17120e;--muted:#6e5a40}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#493522,#17120e 65%);color:var(--ink);font-family:Georgia,serif;min-height:100vh}
 header{background:#1b140e;color:#ead8b4;border-bottom:3px solid var(--gold);padding:22px 5%;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
-.brand{font-size:clamp(25px,4vw,38px);letter-spacing:4px;color:#e6c783;text-shadow:0 1px #000}
+.brand{display:flex;align-items:center;justify-content:center;gap:13px;font-size:clamp(25px,4vw,38px);letter-spacing:4px;color:#e6c783;text-shadow:0 1px #000}.brand-mark{width:48px;height:54px;flex:0 0 auto;filter:drop-shadow(0 2px 2px #0008)}.brand-name{display:inline-block}
 nav{display:flex;gap:7px;flex-wrap:wrap;padding:12px 5%;background:#2a1d12;border-bottom:1px solid #8e682d}
 nav button,.btn{border:1px solid #9a7137;background:#382717;color:#f0dfbd;padding:10px 14px;cursor:pointer;font:14px Georgia;border-radius:2px;text-decoration:none;display:inline-block}
 nav button:hover,.btn:hover{background:#684822}main{max-width:1150px;margin:28px auto;padding:0 18px}.page{display:none;background:linear-gradient(135deg,var(--paper),#e9dcbf);padding:clamp(22px,4vw,42px);border:1px solid #b39158;box-shadow:0 12px 40px #0008;min-height:450px}.page.active{display:block}
@@ -15,7 +15,7 @@ h1,h2,h3{font-weight:normal;color:#4b3018}h1{font-size:clamp(30px,5vw,46px);marg
 </style>
 </head>
 <body>
-<header><div class="brand">AGE OF NATIONS</div><div id="account" class="muted">Browsing as guest</div></header>
+<header><div class="brand"><svg class="brand-mark" viewBox="0 0 64 72" role="img" aria-label="Age of Nations crest" xmlns="http://www.w3.org/2000/svg"><path d="M32 3 57 12v22c0 16-10 27-25 35C17 61 7 50 7 34V12Z" fill="#263b39" stroke="#d8b875" stroke-width="3"/><path d="M32 10 50 17v17c0 12-7 21-18 28-11-7-18-16-18-28V17Z" fill="none" stroke="#b99a60" stroke-width="1.5"/><circle cx="32" cy="31" r="13" fill="#e2c27d" stroke="#382f22" stroke-width="1.5"/><path d="M19 31h26M32 18c-5 5-7 9-7 13s2 8 7 13M32 18c5 5 7 9 7 13s-2 8-7 13M21 24c7 4 15 4 22 0M21 38c7-4 15-4 22 0" fill="none" stroke="#42534a" stroke-width="1.4"/><path d="m23 51 9 5 9-5" fill="none" stroke="#e2c27d" stroke-width="2"/></svg><span class="brand-name">AGE OF NATIONS</span></div><div id="account" class="muted">Browsing as guest</div></header>
 <nav>
 <button onclick="show('home')">Home</button><button onclick="show('nations')">Nations</button><button onclick="show('rulebook')">Rulebook</button><button onclick="show('history')">History</button><button onclick="show('join')">Join</button><button onclick="show('application')">Applications</button><button onclick="show('staff')" id="staffNav" class="hidden">Staff</button>
 </nav>
