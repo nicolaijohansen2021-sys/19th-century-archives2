@@ -1,10 +1,15 @@
 {
-  "name": "19th-century-archives",
+  "name": "age-of-nations",
   "version": "1.0.0",
   "private": true,
-  "description": "Minecraft server community website and application portal",
-  "engines": { "node": ">=20" },
-  "scripts": { "start": "node server.js", "dev": "node --watch server.js" },
+  "description": "Age of Nations Minecraft roleplay website, Discord login, applications and admin content management",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
   "dependencies": {
     "connect-pg-simple": "^10.0.0",
     "dotenv": "^16.4.7",
