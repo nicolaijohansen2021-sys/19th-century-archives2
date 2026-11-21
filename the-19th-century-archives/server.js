@@ -32,7 +32,7 @@ const adminAccounts=[1,2,3].map(i=>({
   password:process.env["ADMIN_PASSWORD_"+i]||""
 })).filter(a=>a.password);
 
-const schema = \`
+const schema = `
 CREATE TABLE IF NOT EXISTS applications (
  id BIGSERIAL PRIMARY KEY, discord_id TEXT NOT NULL, discord_username TEXT NOT NULL,
  answers JSONB NOT NULL, status TEXT NOT NULL DEFAULT 'pending'
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS application_questions (
  question TEXT NOT NULL, field_key TEXT NOT NULL, required BOOLEAN NOT NULL DEFAULT TRUE,
  sort_order INTEGER NOT NULL DEFAULT 0
 );
-\`;
+`;
 
 function safeEqual(a,b){const aa=Buffer.from(String(a));const bb=Buffer.from(String(b));return aa.length===bb.length&&crypto.timingSafeEqual(aa,bb);}
 function requireDiscord(req,res,next){if(!req.session.user)return res.status(401).json({error:"Please sign in with Discord first."});next();}
@@ -208,6 +208,10 @@ app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")))
    ];
    for(let i=0;i<questions.length;i++)await pool.query("INSERT INTO application_questions(type_id,question,field_key,required,sort_order) VALUES($1,$2,$3,$4,$5)",[t.rows[0].id,...questions[i],i]);
   }
+  const homeCount=await pool.query("SELECT COUNT(*)::int AS count FROM site_content WHERE section='home'");
+  if(!homeCount.rows[0].count)await pool.query("INSERT INTO site_content(section,title,body,sort_order) VALUES('home',$1,$2,0)",["Welcome to Age of Nations","Enter a player-built world set in the year 1800, where nations, kingdoms, republics and empires are founded and shaped by the players who inhabit them."]);
+  const rulesCount=await pool.query("SELECT COUNT(*)::int AS count FROM site_content WHERE section='rulebook'");
+  if(!rulesCount.rows[0].count)await pool.query("INSERT INTO site_content(section,title,body,sort_order) VALUES('rulebook',$1,$2,0)",["Community rules","1. Respect and conduct: Treat players respectfully. Harassment, hate speech, threats, doxxing and sustained disruptive behaviour are prohibited.\n\n2. Fair play: No hacked clients, cheats, x-ray, duping or exploiting bugs. Report exploits to staff.\n\n3. Builds and claims: Do not grief, steal or trespass in protected areas. Respect agreed borders and public infrastructure.\n\n4. War and diplomacy: Follow the server's declared conflict procedures. No combat logging, prohibited tactics or exploiting safe zones. Honour treaties and agreements.\n\n5. Economy and trade: No scamming, duped goods or exploiting market systems. Honour trade agreements.\n\n6. Names and chat: Keep usernames, skins, signs and public chat appropriate. Do not impersonate staff.\n\n7. Staff and appeals: Use the designated appeal process for sanctions. Do not interfere with moderation.\n\n8. Applications: Submit truthful information. Do not spam applications or pressure reviewers.\n\n9. Rule updates: Rules may be updated as the server develops; major changes will be announced in Discord."]);
   app.listen(process.env.PORT||3000,()=>console.log("Age of Nations running on port "+(process.env.PORT||3000)));
  }catch(e){console.error("Database initialization failed:",e);process.exit(1);}
 })();
