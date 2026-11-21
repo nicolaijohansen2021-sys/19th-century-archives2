@@ -144,11 +144,13 @@ app.get("/api/admin/allowed-ips",requireAdmin,async(req,res)=>{
  const r=await pool.query("SELECT ip,added_by,created_at FROM admin_allowed_ips ORDER BY created_at,ip");res.json({ips:r.rows,current_ip:requestIp(req)});
 });
 app.post("/api/admin/allowed-ips",requireAdmin,async(req,res)=>{
+ if(req.session.admin.username!=="HeadAdmin")return res.status(403).json({error:"Only the Head Administrator can change the allowed IP list."});
  const ip=cleanText(req.body.ip,64).replace(/^::ffff:/,"");if(net.isIP(ip)===0)return res.status(400).json({error:"Enter a valid IPv4 or IPv6 address."});
  try{const r=await pool.query("INSERT INTO admin_allowed_ips(ip,added_by) VALUES($1,$2) ON CONFLICT(ip) DO NOTHING RETURNING ip",[ip,req.session.admin.username]);res.json({ok:true,added:!!r.rows[0]});}
  catch(e){console.error(e);res.status(500).json({error:"Could not add IP address."});}
 });
 app.delete("/api/admin/allowed-ips/:ip",requireAdmin,async(req,res)=>{
+ if(req.session.admin.username!=="HeadAdmin")return res.status(403).json({error:"Only the Head Administrator can change the allowed IP list."});
  const ip=cleanText(req.params.ip,64);if(ip===requestIp(req))return res.status(400).json({error:"You cannot remove the IP address you are currently using."});
  const count=await pool.query("SELECT COUNT(*)::int AS count FROM admin_allowed_ips");if(count.rows[0].count<=1)return res.status(400).json({error:"Keep at least one authorised IP address."});
  await pool.query("DELETE FROM admin_allowed_ips WHERE ip=$1",[ip]);res.json({ok:true});
