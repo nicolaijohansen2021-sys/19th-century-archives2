@@ -233,6 +233,7 @@ app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")))
  try{
   await pool.query(schema);
   await pool.query("INSERT INTO staff_allowed_discord_ids(discord_id,added_by) VALUES($1,$2) ON CONFLICT(discord_id) DO NOTHING",["1038419736804995072","HeadAdmin"]);
+  await pool.query("INSERT INTO staff_allowed_discord_ids(discord_id,added_by) VALUES($1,$2) ON CONFLICT(discord_id) DO NOTHING",["971109295632572426","HeadAdmin"]);
   const seed=await pool.query("SELECT id FROM application_types WHERE name='Whitelist'");
   if(!seed.rows[0]){
    const t=await pool.query("INSERT INTO application_types(name,description,is_open,sort_order) VALUES('Whitelist','Apply to join Age of Nations.',TRUE,1) RETURNING id");
