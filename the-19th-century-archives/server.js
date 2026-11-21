@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS application_questions (
 function safeEqual(a,b){const aa=Buffer.from(String(a));const bb=Buffer.from(String(b));return aa.length===bb.length&&crypto.timingSafeEqual(aa,bb);}
 function requireDiscord(req,res,next){if(!req.session.user)return res.status(401).json({error:"Please sign in with Discord first."});next();}
 function requireAdmin(req,res,next){if(!req.session.admin)return res.status(401).json({error:"Administrator login required."});next();}
+function requireFullAdmin(req,res,next){if(!req.session.admin)return res.status(401).json({error:"Administrator login required."});if(req.session.admin.username==="Admin03")return res.status(403).json({error:"Admin03 can only access Whitelist applications."});next();}
 function safeUser(u){return u?{id:u.id,username:u.username,global_name:u.global_name,avatar:u.avatar}:null;}
 function cleanText(v,max=4000){return String(v??"").trim().slice(0,max);}
 function validId(v){const n=Number(v);return Number.isSafeInteger(n)&&n>0?n:null;}
@@ -145,18 +146,18 @@ app.post("/api/applications",requireDiscord,async(req,res)=>{
 });
 
 // Head Administrator manages Discord IDs allowed to see the Staff category.
-app.get("/api/admin/allowed-discord-ids",requireAdmin,async(req,res)=>{
+app.get("/api/admin/allowed-discord-ids",requireFullAdmin,async(req,res)=>{
  if(req.session.admin.username!=="HeadAdmin")return res.status(403).json({error:"Only the Head Administrator can view the access list."});
  const r=await pool.query("SELECT discord_id,added_by,created_at FROM staff_allowed_discord_ids ORDER BY created_at,discord_id");res.json({ids:r.rows});
 });
-app.post("/api/admin/allowed-discord-ids",requireAdmin,async(req,res)=>{
+app.post("/api/admin/allowed-discord-ids",requireFullAdmin,async(req,res)=>{
  if(req.session.admin.username!=="HeadAdmin")return res.status(403).json({error:"Only the Head Administrator can change staff access."});
  const id=cleanText(req.body.discord_id,25);
  if(!/^\d{17,20}$/.test(id))return res.status(400).json({error:"Enter a valid Discord user ID (17–20 digits)."});
  try{const r=await pool.query("INSERT INTO staff_allowed_discord_ids(discord_id,added_by) VALUES($1,$2) ON CONFLICT(discord_id) DO NOTHING RETURNING discord_id",[id,req.session.admin.username]);res.json({ok:true,added:!!r.rows[0]});}
  catch(e){console.error(e);res.status(500).json({error:"Could not add Discord ID."});}
 });
-app.delete("/api/admin/allowed-discord-ids/:id",requireAdmin,async(req,res)=>{
+app.delete("/api/admin/allowed-discord-ids/:id",requireFullAdmin,async(req,res)=>{
  if(req.session.admin.username!=="HeadAdmin")return res.status(403).json({error:"Only the Head Administrator can change staff access."});
  const id=cleanText(req.params.id,25);if(!/^\d{17,20}$/.test(id))return res.status(400).json({error:"Invalid Discord ID."});
  await pool.query("DELETE FROM staff_allowed_discord_ids WHERE discord_id=$1",[id]);res.json({ok:true});
@@ -164,11 +165,15 @@ app.delete("/api/admin/allowed-discord-ids/:id",requireAdmin,async(req,res)=>{
 
 // Admin application review
 app.get("/api/admin/applications",requireAdmin,async(req,res)=>{
- const r=await pool.query("SELECT * FROM applications ORDER BY created_at DESC");res.json({applications:r.rows});
+ const r=req.session.admin.username==="Admin03"
+  ?await pool.query("SELECT * FROM applications WHERE application_type=$1 ORDER BY created_at DESC",["Whitelist"])
+  :await pool.query("SELECT * FROM applications ORDER BY created_at DESC");
+ res.json({applications:r.rows});
 });
 app.patch("/api/admin/applications/:id",requireAdmin,async(req,res)=>{
  const id=validId(req.params.id);if(!id)return res.status(400).json({error:"Invalid application ID."});
  const {action}=req.body||{};const found=await pool.query("SELECT * FROM applications WHERE id=$1",[id]);if(!found.rows[0])return res.status(404).json({error:"Application not found."});
+ if(req.session.admin.username==="Admin03"&&found.rows[0].application_type!=="Whitelist")return res.status(403).json({error:"Admin03 can only manage Whitelist applications."});
  if(action==="reset"){if(found.rows[0].status!=="denied")return res.status(400).json({error:"Only denied applications can be reset."});await pool.query("DELETE FROM applications WHERE id=$1",[id]);return res.json({ok:true,reset:true});}
  if(action==="edit"){
   if(!req.body.answers||typeof req.body.answers!=="object"||Array.isArray(req.body.answers))return res.status(400).json({error:"Edited answers are missing."});
@@ -181,48 +186,48 @@ app.patch("/api/admin/applications/:id",requireAdmin,async(req,res)=>{
 });
 
 // Admin content management
-app.post("/api/admin/content",requireAdmin,async(req,res)=>{
+app.post("/api/admin/content",requireFullAdmin,async(req,res)=>{
  const {section}=req.body||{};if(!["nation","history","rulebook","home"].includes(section))return res.status(400).json({error:"Invalid content section."});
  const r=await pool.query("INSERT INTO site_content(section,title,body,metadata,sort_order) VALUES($1,$2,$3,$4,$5) RETURNING *",[section,cleanText(req.body.title,180),cleanText(req.body.body,12000),req.body.metadata&&typeof req.body.metadata==="object"?req.body.metadata:{},Number(req.body.sort_order)||0]);res.json({item:r.rows[0]});
 });
-app.patch("/api/admin/content/:id",requireAdmin,async(req,res)=>{
+app.patch("/api/admin/content/:id",requireFullAdmin,async(req,res)=>{
  const id=validId(req.params.id);if(!id)return res.status(400).json({error:"Invalid content ID."});
  const r=await pool.query("UPDATE site_content SET title=$1,body=$2,metadata=$3,sort_order=$4,updated_at=NOW() WHERE id=$5 RETURNING *",[cleanText(req.body.title,180),cleanText(req.body.body,12000),req.body.metadata&&typeof req.body.metadata==="object"?req.body.metadata:{},Number(req.body.sort_order)||0,id]);
  if(!r.rows[0])return res.status(404).json({error:"Content not found."});res.json({item:r.rows[0]});
 });
-app.delete("/api/admin/content/:id",requireAdmin,async(req,res)=>{
+app.delete("/api/admin/content/:id",requireFullAdmin,async(req,res)=>{
  const id=validId(req.params.id);if(!id)return res.status(400).json({error:"Invalid content ID."});await pool.query("DELETE FROM site_content WHERE id=$1",[id]);res.json({ok:true});
 });
 
 // Admin configurable application categories and questions
-app.post("/api/admin/application-types",requireAdmin,async(req,res)=>{
+app.post("/api/admin/application-types",requireFullAdmin,async(req,res)=>{
  const name=cleanText(req.body.name,80);if(!name)return res.status(400).json({error:"Enter a category name."});
  try{const r=await pool.query("INSERT INTO application_types(name,description,is_open,sort_order) VALUES($1,$2,$3,$4) RETURNING *",[name,cleanText(req.body.description,500),req.body.is_open!==false,Number(req.body.sort_order)||0]);res.json({type:r.rows[0]});}
  catch(e){if(e.code==="23505")return res.status(409).json({error:"That application category already exists."});throw e;}
 });
-app.patch("/api/admin/application-types/:id",requireAdmin,async(req,res)=>{
+app.patch("/api/admin/application-types/:id",requireFullAdmin,async(req,res)=>{
  const id=validId(req.params.id);if(!id)return res.status(400).json({error:"Invalid category ID."});
  const r=await pool.query("UPDATE application_types SET name=$1,description=$2,is_open=$3,sort_order=$4,updated_at=NOW() WHERE id=$5 RETURNING *",[cleanText(req.body.name,80),cleanText(req.body.description,500),req.body.is_open===true,Number(req.body.sort_order)||0,id]);
  if(!r.rows[0])return res.status(404).json({error:"Category not found."});res.json({type:r.rows[0]});
 });
-app.delete("/api/admin/application-types/:id",requireAdmin,async(req,res)=>{
+app.delete("/api/admin/application-types/:id",requireFullAdmin,async(req,res)=>{
  const id=validId(req.params.id);if(!id)return res.status(400).json({error:"Invalid category ID."});
  const used=await pool.query("SELECT COUNT(*)::int AS count FROM applications a JOIN application_types t ON t.name=a.application_type WHERE t.id=$1",[id]);
  if(used.rows[0].count)return res.status(409).json({error:"This category has applications. Close it instead of deleting it so records are preserved."});
  await pool.query("DELETE FROM application_types WHERE id=$1",[id]);res.json({ok:true});
 });
-app.post("/api/admin/application-types/:id/questions",requireAdmin,async(req,res)=>{
+app.post("/api/admin/application-types/:id/questions",requireFullAdmin,async(req,res)=>{
  const id=validId(req.params.id);const question=cleanText(req.body.question,300);const field=cleanText(req.body.field_key,60).toLowerCase().replace(/[^a-z0-9_]/g,"_");
  if(!id||!question||!field)return res.status(400).json({error:"Enter a question and a short field key."});
  const r=await pool.query("INSERT INTO application_questions(type_id,question,field_key,required,sort_order) VALUES($1,$2,$3,$4,$5) RETURNING *",[id,question,field,req.body.required!==false,Number(req.body.sort_order)||0]);res.json({question:r.rows[0]});
 });
-app.patch("/api/admin/questions/:id",requireAdmin,async(req,res)=>{
+app.patch("/api/admin/questions/:id",requireFullAdmin,async(req,res)=>{
  const id=validId(req.params.id);if(!id)return res.status(400).json({error:"Invalid question ID."});
  const question=cleanText(req.body.question,300);const field=cleanText(req.body.field_key,60).toLowerCase().replace(/[^a-z0-9_]/g,"_");
  const r=await pool.query("UPDATE application_questions SET question=$1,field_key=$2,required=$3,sort_order=$4 WHERE id=$5 RETURNING *",[question,field,req.body.required===true,Number(req.body.sort_order)||0,id]);
  if(!r.rows[0])return res.status(404).json({error:"Question not found."});res.json({question:r.rows[0]});
 });
-app.delete("/api/admin/questions/:id",requireAdmin,async(req,res)=>{
+app.delete("/api/admin/questions/:id",requireFullAdmin,async(req,res)=>{
  const id=validId(req.params.id);if(!id)return res.status(400).json({error:"Invalid question ID."});await pool.query("DELETE FROM application_questions WHERE id=$1",[id]);res.json({ok:true});
 });
 
