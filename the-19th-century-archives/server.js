@@ -96,8 +96,13 @@ app.get("/api/staff-access",async(req,res)=>{try{
  const found=await pool.query("SELECT 1 FROM staff_allowed_discord_ids WHERE discord_id=$1",[req.session.user.id]);
  res.json({allowed:!!found.rows[0],setup:false});
  }catch(e){res.status(500).json({error:"Could not check staff access."});}});
-app.post("/api/admin/login",(req,res)=>{
+app.post("/api/admin/login",async(req,res)=>{
  const {username,password}=req.body||{};
+ if(username!=="HeadAdmin"){
+  if(!req.session.user)return res.status(403).json({error:"Sign in with an authorised Discord account before staff login."});
+  const access=await pool.query("SELECT 1 FROM staff_allowed_discord_ids WHERE discord_id=$1",[req.session.user.id]);
+  if(!access.rows[0])return res.status(403).json({error:"Your Discord account is not authorised for staff access."});
+ }
  const match=adminAccounts.find(a=>safeEqual(a.username,username||"")&&safeEqual(a.password,password||""));
  if(!match)return res.status(401).json({error:"Incorrect administrator username or password."});
  req.session.regenerate(err=>{if(err)return res.status(500).json({error:"Could not start admin session."});req.session.admin={username:match.username};req.session.user=null;res.json({ok:true,admin:req.session.admin});});
