@@ -4,6 +4,7 @@ const session = require("express-session");
 const PgSession = require("connect-pg-simple")(session);
 const { Pool } = require("pg");
 const crypto = require("crypto");
+const net = require("net");
 const path = require("path");
 
 const app = express();
@@ -43,6 +44,9 @@ CREATE TABLE IF NOT EXISTS applications (
 ALTER TABLE applications ADD COLUMN IF NOT EXISTS application_type TEXT NOT NULL DEFAULT 'Whitelist';
 CREATE INDEX IF NOT EXISTS applications_discord_id_idx ON applications(discord_id);
 
+CREATE TABLE IF NOT EXISTS admin_allowed_ips (
+ ip TEXT PRIMARY KEY, added_by TEXT NOT NULL DEFAULT 'setup', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 CREATE TABLE IF NOT EXISTS site_content (
  id BIGSERIAL PRIMARY KEY, section TEXT NOT NULL CHECK(section IN ('nation','history','rulebook','home')),
  title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -63,7 +67,9 @@ CREATE TABLE IF NOT EXISTS application_questions (
 
 function safeEqual(a,b){const aa=Buffer.from(String(a));const bb=Buffer.from(String(b));return aa.length===bb.length&&crypto.timingSafeEqual(aa,bb);}
 function requireDiscord(req,res,next){if(!req.session.user)return res.status(401).json({error:"Please sign in with Discord first."});next();}
-function requireAdmin(req,res,next){if(!req.session.admin)return res.status(401).json({error:"Administrator login required."});next();}
+function requestIp(req){return String(req.ip||req.socket?.remoteAddress||"").replace(/^::ffff:/,"");}
+async function isAdminIpAllowed(ip){const r=await pool.query("SELECT COUNT(*)::int AS count FROM admin_allowed_ips");if(!r.rows[0].count)return true;const found=await pool.query("SELECT 1 FROM admin_allowed_ips WHERE ip=$1",[ip]);return !!found.rows[0];}
+async function requireAdmin(req,res,next){if(!req.session.admin)return res.status(401).json({error:"Administrator login required."});try{if(!(await isAdminIpAllowed(requestIp(req))))return res.status(403).json({error:"This IP address is not authorised for staff access."});next();}catch(e){next(e);}}
 function safeUser(u){return u?{id:u.id,username:u.username,global_name:u.global_name,avatar:u.avatar}:null;}
 function cleanText(v,max=4000){return String(v??"").trim().slice(0,max);}
 function validId(v){const n=Number(v);return Number.isSafeInteger(n)&&n>0?n:null;}
@@ -85,11 +91,16 @@ app.get("/auth/discord/callback",async(req,res)=>{
   req.session.user={id:profile.id,username:profile.username,global_name:profile.global_name,avatar:profile.avatar};req.session.admin=null;res.redirect("/");
  }catch(e){console.error(e);res.status(500).send("Discord login failed. Please try again.");}
 });
-app.post("/api/admin/login",(req,res)=>{
+app.get("/api/staff-access",async(req,res)=>{try{res.json({allowed:await isAdminIpAllowed(requestIp(req))});}catch(e){res.status(500).json({error:"Could not check staff access."});}});
+app.post("/api/admin/login",async(req,res)=>{
+ const ip=requestIp(req);
+ if(!(await isAdminIpAllowed(ip)))return res.status(403).json({error:"This IP address is not authorised for staff access."});
  const {username,password}=req.body||{};
  const match=adminAccounts.find(a=>safeEqual(a.username,username||"")&&safeEqual(a.password,password||""));
  if(!match)return res.status(401).json({error:"Incorrect administrator username or password."});
- req.session.regenerate(err=>{if(err)return res.status(500).json({error:"Could not start admin session."});req.session.admin={username:match.username};req.session.user=null;res.json({ok:true,admin:req.session.admin});});
+ req.session.regenerate(err=>{if(err)return res.status(500).json({error:"Could not start admin session."});req.session.admin={username:match.username};req.session.user=null;
+   pool.query("INSERT INTO admin_allowed_ips(ip,added_by) SELECT $1,$2 WHERE NOT EXISTS (SELECT 1 FROM admin_allowed_ips)",[ip,match.username]).then(()=>res.json({ok:true,admin:req.session.admin})).catch(e=>{console.error(e);res.status(500).json({error:"Could not register the initial staff IP."});});
+  });
 });
 app.post("/api/logout",(req,res)=>req.session.destroy(()=>res.json({ok:true})));
 app.get("/api/me",(req,res)=>res.json({user:safeUser(req.session.user),admin:req.session.admin||null}));
@@ -126,6 +137,21 @@ app.post("/api/applications",requireDiscord,async(req,res)=>{
  for(const q of qr.rows){const v=cleanText(req.body?.answers?.[q.field_key],4000);if(q.required&&!v)return res.status(400).json({error:"Please answer: "+q.question});answers[q.field_key]=v;}
  const r=await pool.query("INSERT INTO applications(discord_id,discord_username,application_type,answers) VALUES($1,$2,$3,$4) RETURNING id,application_type,answers,status,created_at",[req.session.user.id,req.session.user.global_name||req.session.user.username,type.name,answers]);
  res.json({application:r.rows[0]});
+});
+
+// Admin IP allowlist management
+app.get("/api/admin/allowed-ips",requireAdmin,async(req,res)=>{
+ const r=await pool.query("SELECT ip,added_by,created_at FROM admin_allowed_ips ORDER BY created_at,ip");res.json({ips:r.rows,current_ip:requestIp(req)});
+});
+app.post("/api/admin/allowed-ips",requireAdmin,async(req,res)=>{
+ const ip=cleanText(req.body.ip,64).replace(/^::ffff:/,"");if(net.isIP(ip)===0)return res.status(400).json({error:"Enter a valid IPv4 or IPv6 address."});
+ try{const r=await pool.query("INSERT INTO admin_allowed_ips(ip,added_by) VALUES($1,$2) ON CONFLICT(ip) DO NOTHING RETURNING ip",[ip,req.session.admin.username]);res.json({ok:true,added:!!r.rows[0]});}
+ catch(e){console.error(e);res.status(500).json({error:"Could not add IP address."});}
+});
+app.delete("/api/admin/allowed-ips/:ip",requireAdmin,async(req,res)=>{
+ const ip=cleanText(req.params.ip,64);if(ip===requestIp(req))return res.status(400).json({error:"You cannot remove the IP address you are currently using."});
+ const count=await pool.query("SELECT COUNT(*)::int AS count FROM admin_allowed_ips");if(count.rows[0].count<=1)return res.status(400).json({error:"Keep at least one authorised IP address."});
+ await pool.query("DELETE FROM admin_allowed_ips WHERE ip=$1",[ip]);res.json({ok:true});
 });
 
 // Admin application review
