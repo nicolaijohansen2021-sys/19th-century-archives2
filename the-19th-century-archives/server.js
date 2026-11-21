@@ -92,7 +92,7 @@ app.get("/auth/discord/callback",async(req,res)=>{
 });
 app.get("/api/staff-access",async(req,res)=>{try{
  const count=await pool.query("SELECT COUNT(*)::int AS count FROM staff_allowed_discord_ids");
- if(req.session.admin?.username==="HeadAdmin"||count.rows[0].count===0)return res.json({allowed:true,setup:count.rows[0].count===0});
+ if(req.session.admin||count.rows[0].count===0)return res.json({allowed:true,setup:count.rows[0].count===0});
  if(!req.session.user)return res.json({allowed:false});
  const found=await pool.query("SELECT 1 FROM staff_allowed_discord_ids WHERE discord_id=$1",[req.session.user.id]);
  res.json({allowed:!!found.rows[0],setup:false});
